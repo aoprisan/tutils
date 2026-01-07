@@ -1,0 +1,36 @@
+[package]
+name = "tui-core"
+description = "Shared TUI components and framework for tutils"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# TUI
+ratatui.workspace = true
+crossterm.workspace = true
+
+# Async
+tokio.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Serialization
+serde.workspace = true
+toml.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Utilities
+directories.workspace = true
+chrono.workspace = true
+unicode-width.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }

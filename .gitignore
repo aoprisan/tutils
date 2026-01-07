@@ -1,0 +1,23 @@
+# Rust build artifacts
+/target/
+/dist/
+
+# Cargo lock (optional for binaries, but we'll keep it)
+# Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local

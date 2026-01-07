@@ -1,0 +1,48 @@
+[package]
+name = "tmail"
+description = "Pine-like terminal mail client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "tmail"
+path = "src/main.rs"
+
+[dependencies]
+# Internal
+tui-core.workspace = true
+
+# TUI
+ratatui.workspace = true
+crossterm.workspace = true
+
+# Async
+tokio.workspace = true
+
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Serialization
+serde.workspace = true
+toml.workspace = true
+
+# CLI
+clap.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Email
+imap.workspace = true
+native-tls.workspace = true
+mail-parser.workspace = true
+lettre.workspace = true
+
+# Utilities
+chrono.workspace = true
+textwrap.workspace = true
+directories.workspace = true

@@ -1,0 +1,72 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tui-core",
+    "crates/tmail",
+    "crates/tweb",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["tutils contributors"]
+license = "MIT"
+repository = "https://github.com/aoprisan/tutils"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# TUI Framework
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Async Runtime
+tokio = { version = "1.42", features = ["full"] }
+
+# Error Handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# HTTP/Web (for tweb)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli"] }
+html5ever = "0.27"
+scraper = "0.20"
+url = "2.5"
+
+# Email (for tmail)
+imap = "2.4"
+native-tls = "0.2"
+mail-parser = "0.9"
+lettre = { version = "0.11", default-features = false, features = ["builder", "rustls-tls"] }
+
+# Utilities
+directories = "5.0"
+chrono = { version = "0.4", features = ["serde"] }
+unicode-width = "0.2"
+textwrap = "0.16"
+
+# Internal crates
+tui-core = { path = "crates/tui-core" }
+
+[profile.release]
+opt-level = "z"          # Optimize for size
+lto = true               # Link-time optimization
+codegen-units = 1        # Single codegen unit for better optimization
+panic = "abort"          # Abort on panic (smaller binary)
+strip = true             # Strip symbols
+
+[profile.release-debug]
+inherits = "release"
+strip = false
+debug = true

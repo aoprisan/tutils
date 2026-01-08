@@ -1,15 +1,19 @@
-//! IMAP client wrapper
+//! IMAP client wrapper using rustls
 
 use crate::config::TmailConfig;
 use crate::mail::{Folder, Message};
 use anyhow::{Context, Result};
-use imap::Session;
-use native_tls::TlsStream;
-use std::net::TcpStream;
+use async_imap::Session;
+use std::sync::Arc;
+use tokio::net::TcpStream;
+use tokio_rustls::{rustls, TlsConnector};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
-/// Mail client for IMAP operations
+type TlsStream = Compat<tokio_rustls::client::TlsStream<TcpStream>>;
+
+/// Mail client for async IMAP operations with rustls
 pub struct MailClient {
-    session: Option<Session<TlsStream<TcpStream>>>,
+    session: Option<Session<TlsStream>>,
     config: TmailConfig,
 }
 
@@ -22,19 +26,40 @@ impl MailClient {
         }
     }
 
-    /// Connect to the IMAP server
-    pub fn connect(&mut self) -> Result<()> {
-        let tls = native_tls::TlsConnector::builder()
-            .build()
-            .context("Failed to create TLS connector")?;
+    /// Connect to the IMAP server using rustls
+    pub async fn connect(&mut self) -> Result<()> {
+        // Build rustls config with Mozilla root certificates
+        let root_store = rustls::RootCertStore::from_iter(
+            webpki_roots::TLS_SERVER_ROOTS.iter().cloned(),
+        );
 
-        let client = imap::connect(
-            (self.config.imap.host.as_str(), self.config.imap.port),
-            &self.config.imap.host,
-            &tls,
-        )
-        .context("Failed to connect to IMAP server")?;
+        let tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
 
+        let connector = TlsConnector::from(Arc::new(tls_config));
+
+        // Connect TCP
+        let addr = format!("{}:{}", self.config.imap.host, self.config.imap.port);
+        let tcp_stream = TcpStream::connect(&addr)
+            .await
+            .with_context(|| format!("Failed to connect to {addr}"))?;
+
+        // Upgrade to TLS
+        let server_name = self.config.imap.host.clone().try_into()
+            .map_err(|_| anyhow::anyhow!("Invalid server name"))?;
+        let tls_stream = connector
+            .connect(server_name, tcp_stream)
+            .await
+            .context("TLS handshake failed")?;
+
+        // Wrap with compat layer to convert tokio traits to futures traits
+        let compat_stream = tls_stream.compat();
+
+        // Create IMAP client
+        let client = async_imap::Client::new(compat_stream);
+
+        // Login
         let password = self
             .config
             .imap
@@ -44,6 +69,7 @@ impl MailClient {
 
         let session = client
             .login(&self.config.imap.username, password)
+            .await
             .map_err(|e| anyhow::anyhow!("Login failed: {:?}", e.0))?;
 
         self.session = Some(session);
@@ -51,9 +77,9 @@ impl MailClient {
     }
 
     /// Disconnect from the server
-    pub fn disconnect(&mut self) -> Result<()> {
+    pub async fn disconnect(&mut self) -> Result<()> {
         if let Some(mut session) = self.session.take() {
-            session.logout().context("Failed to logout")?;
+            session.logout().await.context("Failed to logout")?;
         }
         Ok(())
     }
@@ -64,18 +90,22 @@ impl MailClient {
     }
 
     /// List all folders
-    pub fn list_folders(&mut self) -> Result<Vec<Folder>> {
+    pub async fn list_folders(&mut self) -> Result<Vec<Folder>> {
+        use futures::StreamExt;
+
         let session = self
             .session
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Not connected"))?;
 
-        let folders = session
+        let mut folders_stream = session
             .list(None, Some("*"))
+            .await
             .context("Failed to list folders")?;
 
         let mut result = Vec::new();
-        for folder in folders.iter() {
+        while let Some(folder_result) = folders_stream.next().await {
+            let folder = folder_result.context("Failed to get folder")?;
             result.push(Folder {
                 name: folder.name().to_string(),
                 path: folder.name().to_string(),
@@ -89,7 +119,7 @@ impl MailClient {
     }
 
     /// Select a folder and return message count
-    pub fn select_folder(&mut self, name: &str) -> Result<usize> {
+    pub async fn select_folder(&mut self, name: &str) -> Result<usize> {
         let session = self
             .session
             .as_mut()
@@ -97,25 +127,31 @@ impl MailClient {
 
         let mailbox = session
             .select(name)
+            .await
             .with_context(|| format!("Failed to select folder: {name}"))?;
 
         Ok(mailbox.exists as usize)
     }
 
     /// Fetch messages from the current folder
-    pub fn fetch_messages(&mut self, start: usize, count: usize) -> Result<Vec<Message>> {
+    pub async fn fetch_messages(&mut self, start: usize, count: usize) -> Result<Vec<Message>> {
+        use futures::StreamExt;
+
         let session = self
             .session
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("Not connected"))?;
 
         let range = format!("{}:{}", start, start + count - 1);
-        let messages = session
+        let mut messages_stream = session
             .fetch(&range, "(UID FLAGS ENVELOPE BODY.PEEK[TEXT])")
+            .await
             .context("Failed to fetch messages")?;
 
         let mut result = Vec::new();
-        for msg in messages.iter() {
+        while let Some(msg_result) = messages_stream.next().await {
+            let msg = msg_result.context("Failed to fetch message")?;
+
             let envelope = msg.envelope().ok_or_else(|| anyhow::anyhow!("No envelope"))?;
 
             let from = envelope
@@ -143,8 +179,9 @@ impl MailClient {
                 .map(|b| String::from_utf8_lossy(b).to_string())
                 .unwrap_or_default();
 
-            let flags = msg.flags();
-            let unread = !flags.iter().any(|f| matches!(f, imap::types::Flag::Seen));
+            let flags: Vec<_> = msg.flags().collect();
+            let unread = !flags.iter().any(|f| matches!(f, async_imap::types::Flag::Seen));
+            let flagged = flags.iter().any(|f| matches!(f, async_imap::types::Flag::Flagged));
 
             result.push(Message {
                 id: msg.uid.map(|u| u.to_string()).unwrap_or_default(),
@@ -152,11 +189,11 @@ impl MailClient {
                 to: vec![],
                 cc: vec![],
                 subject,
-                date: String::new(), // TODO: Parse date
+                date: String::new(),
                 body,
                 html_body: None,
                 unread,
-                flagged: flags.iter().any(|f| matches!(f, imap::types::Flag::Flagged)),
+                flagged,
                 attachments: vec![],
             });
         }

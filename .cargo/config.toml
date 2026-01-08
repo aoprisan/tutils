@@ -1,56 +1,45 @@
-# Cargo configuration for static binary compilation
+# Cargo configuration for building tutils
 #
-# Build static binaries:
-#   Linux:  cargo build --release --target x86_64-unknown-linux-musl
-#   macOS:  cargo build --release --target x86_64-apple-darwin (or aarch64-apple-darwin)
+# Native builds (on same platform):
+#   cargo build --release
 #
-# Prerequisites (Linux):
+# Static Linux binaries (on Linux):
+#   cargo build --release --target x86_64-unknown-linux-musl
+#
+# Prerequisites (Linux for musl builds):
 #   rustup target add x86_64-unknown-linux-musl
 #   apt-get install musl-tools  (Debian/Ubuntu)
 #   dnf install musl-gcc        (Fedora)
 #
 # Prerequisites (macOS):
-#   rustup target add x86_64-apple-darwin aarch64-apple-darwin
+#   Just run: cargo build --release
+#   macOS doesn't support fully static binaries
+#
+# Cross-compilation from macOS to Linux requires additional tooling:
+#   brew install filosottile/musl-cross/musl-cross
+#   See: https://github.com/AcademySoftwareFoundation/openexr/wiki/Homebrew-Build-Machine-Setup
 
 # =============================================================================
-# Linux musl (fully static binary)
+# Linux musl (fully static binary) - ONLY for native Linux builds
+# For cross-compilation from macOS, use a Docker container or CI/CD
 # =============================================================================
 [target.x86_64-unknown-linux-musl]
 rustflags = [
     "-C", "target-feature=+crt-static",
-    "-C", "link-self-contained=yes",
 ]
 
 [target.aarch64-unknown-linux-musl]
 rustflags = [
     "-C", "target-feature=+crt-static",
-    "-C", "link-self-contained=yes",
 ]
 
 # =============================================================================
-# Linux GNU (dynamic build - for development)
-# Note: GNU target doesn't support fully static builds easily.
-# Use musl target for static binaries.
+# macOS - No special flags needed
+# Note: macOS always produces dynamic binaries (links to libSystem.dylib)
 # =============================================================================
-# [target.x86_64-unknown-linux-gnu]
-# rustflags = []
-#
-# [target.aarch64-unknown-linux-gnu]
-# rustflags = []
-
-# =============================================================================
-# macOS (static linking where possible)
-# Note: macOS doesn't support fully static binaries, but we minimize dynamic deps
-# =============================================================================
-[target.x86_64-apple-darwin]
-rustflags = [
-    "-C", "target-feature=+crt-static",
-]
-
-[target.aarch64-apple-darwin]
-rustflags = [
-    "-C", "target-feature=+crt-static",
-]
+# [target.x86_64-apple-darwin]
+# [target.aarch64-apple-darwin]
+# No flags - use defaults
 
 # =============================================================================
 # Build settings
@@ -59,16 +48,10 @@ rustflags = [
 # Uncomment to set default target for your platform:
 # target = "x86_64-unknown-linux-musl"
 
-[env]
-# Use rustls instead of native-tls to avoid OpenSSL dependency
-CARGO_FEATURE_RUSTLS_TLS = "1"
-
 [alias]
-# Convenience aliases for static builds
+# Build aliases
 static-linux = "build --release --target x86_64-unknown-linux-musl"
 static-linux-arm = "build --release --target aarch64-unknown-linux-musl"
-static-macos = "build --release --target x86_64-apple-darwin"
-static-macos-arm = "build --release --target aarch64-apple-darwin"
 
-# Build all binaries
+# Build all binaries for current platform
 all = "build --release --workspace"

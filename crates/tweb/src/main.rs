@@ -65,7 +65,7 @@ async fn main() -> Result<()> {
 
     // Load initial URL if provided
     if let Some(url) = args.url {
-        app.navigate(&url).await?;
+        app.navigate(&url);
     }
 
     run_app(app).await?;

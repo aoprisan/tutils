@@ -4,11 +4,13 @@ use crate::config::TwebConfig;
 use crate::web::Page;
 use anyhow::{Context, Result};
 use reqwest::redirect::Policy;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// HTTP client for fetching web pages
+#[derive(Clone)]
 pub struct WebClient {
-    client: reqwest::Client,
+    client: Arc<reqwest::Client>,
 }
 
 impl WebClient {
@@ -23,7 +25,9 @@ impl WebClient {
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client }
+        Self {
+            client: Arc::new(client),
+        }
     }
 
     /// Fetch a page from URL

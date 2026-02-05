@@ -1,8 +1,12 @@
 //! Email handling for tmail
 
 mod client;
+mod smtp;
+mod worker;
 
 pub use client::MailClient;
+pub use smtp::SmtpClient;
+pub use worker::{mail_worker, MailCommand, MailResult};
 
 /// Represents an email message
 #[derive(Debug, Clone)]

@@ -200,4 +200,71 @@ impl MailClient {
 
         Ok(result)
     }
+
+    /// Delete a message by UID (marks as deleted and expunges)
+    pub async fn delete_message(&mut self, uid: &str) -> Result<()> {
+        use futures::StreamExt;
+
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Not connected"))?;
+
+        // Add \Deleted flag
+        {
+            let mut store_stream = session
+                .uid_store(uid, "+FLAGS (\\Deleted)")
+                .await
+                .context("Failed to mark message as deleted")?;
+
+            // Consume the stream
+            while store_stream.next().await.is_some() {}
+        }
+
+        // Expunge to actually delete - drop the stream, expunge happens on call
+        let _ = session.expunge().await.context("Failed to expunge")?;
+
+        Ok(())
+    }
+
+    /// Set or clear a flag on a message
+    async fn set_flag(&mut self, uid: &str, flag: &str, enable: bool) -> Result<()> {
+        use futures::StreamExt;
+
+        let session = self
+            .session
+            .as_mut()
+            .ok_or_else(|| anyhow::anyhow!("Not connected"))?;
+
+        let op = if enable { "+FLAGS" } else { "-FLAGS" };
+        let mut store_stream = session
+            .uid_store(uid, format!("{op} ({flag})"))
+            .await
+            .context("Failed to update flags")?;
+
+        // Consume the stream
+        while let Some(_) = store_stream.next().await {}
+
+        Ok(())
+    }
+
+    /// Mark message as read (set \Seen flag)
+    pub async fn mark_read(&mut self, uid: &str) -> Result<()> {
+        self.set_flag(uid, "\\Seen", true).await
+    }
+
+    /// Mark message as unread (remove \Seen flag)
+    pub async fn mark_unread(&mut self, uid: &str) -> Result<()> {
+        self.set_flag(uid, "\\Seen", false).await
+    }
+
+    /// Flag/star message (set \Flagged)
+    pub async fn flag_message(&mut self, uid: &str) -> Result<()> {
+        self.set_flag(uid, "\\Flagged", true).await
+    }
+
+    /// Unflag/unstar message (remove \Flagged)
+    pub async fn unflag_message(&mut self, uid: &str) -> Result<()> {
+        self.set_flag(uid, "\\Flagged", false).await
+    }
 }
